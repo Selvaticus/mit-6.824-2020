@@ -6,4 +6,4 @@ More info about the class can be found on the [class page](https://pdos.csail.mi
 
 ## Notes
 
-As opossed to previous years this edition of the class is presented in Go, so that is the language we are going to be using. More can be found [here](https://golang.org)
+As opossed to previous years this edition of the class is presented in Go, so that is the language I'm using. More can be found [here](https://golang.org)
