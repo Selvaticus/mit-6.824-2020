@@ -6,6 +6,8 @@ Also describes why the choice of Golang was made.
 
 [Video](https://pdos.csail.mit.edu/6.824/video/2.html) | [Notes](https://pdos.csail.mit.edu/6.824/notes/l-rpc.txt)
 
+*Notes: Code provided as example by staff (not my code)*
+
 ## RPC
 
 File `kv.go` shows an example given by the staff of a key/value store server and the use of RPC to store and retrieve values
