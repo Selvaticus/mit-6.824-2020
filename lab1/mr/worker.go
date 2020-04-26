@@ -129,15 +129,16 @@ func runMapPhase(mapf func(string, string) []KeyValue, task *GetTaskReply)  ([]s
 		file, ok := intermediateFiles[bucket]
 		if !ok {
 			// If no file descriptor exists for the bucket, create a new one
-			filename := fmt.Sprintf("mr-%v-%v", strconv.Itoa(task.TaskId), strconv.Itoa(bucket))
-			file, err = os.Create(filename)
+			// Create a temp file to be renamed after
+			file, err = ioutil.TempFile("", "mr-")
+			// file, err = os.Create(filename)
 			if err != nil {
 				// If we fail to create a file, return err
 				return nil, err
 			}
 			// Update map with file descriptiors and list of files written
 			intermediateFiles[bucket] = file
-			intermediateFilesNames = append(intermediateFilesNames, filename)
+			// intermediateFilesNames = append(intermediateFilesNames, filename)
 		}
 		// write the result Key/Value to the file
 		enc := json.NewEncoder(file)
@@ -145,11 +146,26 @@ func runMapPhase(mapf func(string, string) []KeyValue, task *GetTaskReply)  ([]s
 
 	}
 
+	// Renaming all temp files and close file handlers
+	for key, value := range intermediateFiles {
+		old_filename := value.Name()
+		// Close file handler
+		value.Close()
+		new_filename := fmt.Sprintf("mr-%v-%v", strconv.Itoa(task.TaskId), strconv.Itoa(key))
+		err := os.Rename(old_filename, new_filename)
+		if err != nil {
+			log.Fatalf("Failed to rename file %v to %v", old_filename, new_filename)
+		}
+		intermediateFilesNames = append(intermediateFilesNames, new_filename)
+	}
+
+
 	return intermediateFilesNames, nil
 }
 
 func runReducePhase(reducef func(string, []string) string, task *GetTaskReply)  (string, error) {
 
+	// Assumption that the format will always going to be mr-MAP_TASK_ID-REDUCE_TASK_ID
 	matches, err := filepath.Glob("mr-*-"+strconv.Itoa(task.BucketId))
 
 	if err != nil {
@@ -177,8 +193,10 @@ func runReducePhase(reducef func(string, []string) string, task *GetTaskReply)  
 
 	sort.Sort(ByKey(intermediate))
 
-	oname := "mr-out-"+strconv.Itoa(task.BucketId)
-	ofile, _ := os.Create(oname)
+	// oname := "mr-out-"+strconv.Itoa(task.BucketId)
+	// ofile, _ := os.Create(oname)
+
+	ofile, err := ioutil.TempFile("", "mr-out")
 
 	// call Reduce on each distinct key in intermediate[], and print the result
 	i := 0
@@ -199,9 +217,18 @@ func runReducePhase(reducef func(string, []string) string, task *GetTaskReply)  
 		i = j
 	}
 
+	oname := ofile.Name()
+
 	ofile.Close()
 
-	return oname, nil
+	new_name := "mr-out-"+strconv.Itoa(task.BucketId)
+
+	err = os.Rename(oname, new_name)
+	if err != nil {
+		log.Fatalf("Failed to rename file %v to %v", oname, new_name)
+	}
+
+	return new_name, nil
 }
 
 //
