@@ -24,6 +24,36 @@ type ExampleReply struct {
 
 // Add your RPC definitions here.
 
+type GetTaskArgs struct {
+}
+
+type GetTaskReply struct {
+	TaskId int
+	Filename string
+	AllDone bool
+	IsMap bool
+	Reducers int
+	BucketId int
+}
+
+type ReportOnMapJobArgs struct {
+	TaskId int
+	Status int
+}
+
+type ReportOnMapJobReply struct {
+}
+
+type ReportOnReduceJobArgs struct {
+	TaskId int
+	Status int
+}
+
+type ReportOnReduceJobReply struct {
+	TaskId int
+	Status int
+}
+
 
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp, for the master.
