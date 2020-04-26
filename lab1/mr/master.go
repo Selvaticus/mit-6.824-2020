@@ -6,6 +6,7 @@ import "os"
 import "net/rpc"
 import "net/http"
 import "sync"
+import "time"
 
 
 type Master struct {
@@ -25,6 +26,7 @@ type MapTask struct {
 	// 1 running
 	// 2 done
 	stage int
+	started time.Time
 }
 
 type ReduceTask struct {
@@ -34,11 +36,7 @@ type ReduceTask struct {
 	// 1 running
 	// 2 done
 	stage int
-}
-
-type TaskStage struct {
-	
-	stage int
+	started time.Time
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -51,7 +49,7 @@ func (m *Master) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 	if !m.mapPhaseDone() {
 		PrintDebug("Map phase not done yet...")
 		// Send map task
-		for _, v := range(m.mapTasks) {
+		for i, v := range(m.mapTasks) {
 			if v.stage == 0 {
 				reply.Filename = v.filename
 				reply.TaskId = v.taskId
@@ -60,15 +58,20 @@ func (m *Master) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 				reply.Reducers = m.reducers		
 
 				// Marked as running, aka assigned to worker
+				// and record when it started
 				v.stage = 1
+				v.started = time.Now()
+				m.mapTasks[i] = v
+
 				PrintDebugf("Sending job: %+v", reply)
+				PrintDebugf("Updated task: %+v", v)
 				return nil
 			}
 		}
 	} else if !m.reducePhaseDone() {
 		PrintDebug("Reduce phase not done yet...")
 		// Send reduce task
-		for _, v := range(m.reduceTasks) {
+		for i, v := range(m.reduceTasks) {
 			if v.stage == 0 {
 				reply.BucketId = v.taskBucket
 				reply.TaskId = v.taskId
@@ -76,9 +79,13 @@ func (m *Master) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 				reply.IsMap = false
 
 				// Marked as running, aka assigned to worker
+				// and record when it started
 				v.stage = 1
+				v.started = time.Now()
+				m.reduceTasks[i] = v
 
 				PrintDebugf("Sending job: %+v", reply)
+				PrintDebugf("Updated task: %+v", v)
 				return nil
 			}
 		}
@@ -140,6 +147,44 @@ func (m *Master) reducePhaseDone() bool {
 	return true;
 }
 
+// Scheduler function to reassign long running tasks to other workers
+func (m *Master) checkForLongRunningTasks() {
+	// Make sure no one with mutate our data while we figure out if tasks need reassigment
+	PrintDebug("Checking for long running tasks...")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.mapPhaseDone() {
+		for i, v := range(m.mapTasks) {
+			PrintDebugf("Checking task: %+v", v)
+			if v.stage == 1 {
+				elapsed := time.Since(v.started)
+				if elapsed.Seconds() > 10 {
+					PrintDebug("It is long running, making it available to assigment")
+					// Task as been running for too long, needs to be made available again
+					v.stage = 0
+					m.mapTasks[i] = v
+					
+				}
+			}
+		}
+	} else if !m.reducePhaseDone() {
+		for i, v := range(m.reduceTasks) {
+			PrintDebugf("Checking task: %+v", v)
+			if v.stage == 1 {
+				elapsed := time.Since(v.started)
+				if elapsed.Seconds() > 10 {
+					PrintDebug("It is long running, making it available to assigment")
+					// Task as been running for too long, needs to be made available again
+					v.stage = 0
+					m.reduceTasks[i] = v
+				}
+			}
+		}
+	}
+	PrintDebug("Checking for long running tasks done.")
+}
+
 //
 // an example RPC handler.
 //
@@ -175,6 +220,8 @@ func (m *Master) Done() bool {
 	ret := false
 
 	// Your code here.
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.mapPhaseDone() && m.reducePhaseDone() {
 		ret = true
 	}
@@ -191,6 +238,8 @@ func MakeMaster(files []string, nReduce int) *Master {
 	m := Master{}
 
 	// Your code here.
+
+	// initialise a map task per file
 	m.mapTasks = make([]MapTask, len(files))
 	for i, v := range(files) {
 		m.mapTasks[i] = MapTask{
@@ -199,6 +248,8 @@ func MakeMaster(files []string, nReduce int) *Master {
 			stage: 0,
 		}
 	}
+
+	// initialise a reduce task per reducer
 	m.reduceTasks = make([]ReduceTask, nReduce)
 	for i := 0; i < nReduce; i++ {
 		m.reduceTasks[i] = ReduceTask{
@@ -209,6 +260,17 @@ func MakeMaster(files []string, nReduce int) *Master {
 	}
 	m.reducers = nReduce
 	m.nFiles = len(files)
+
+	// Schedule a function to reasign task if they taking too long
+	tenSecondTimer := time.NewTicker(10 * time.Second)
+	go func() {
+		// wait for tick
+		for {
+			PrintDebug("Waiting for timer")
+			<-tenSecondTimer.C
+			m.checkForLongRunningTasks()
+		}
+	}()
 
 	PrintDebugf("MAP TASKS: %+v", m.mapTasks)
 	PrintDebugf("REDUCE TASKS: %+v", m.reduceTasks)
