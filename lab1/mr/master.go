@@ -92,6 +92,7 @@ func (m *Master) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 	} else {
 		PrintDebug("All done.")
 		reply.AllDone = true
+		return nil
 	}
 	
 	return nil

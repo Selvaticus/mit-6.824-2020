@@ -101,6 +101,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		runTask = call("Master.GetTask", &taskArgs, &taskReply)
 	}
 
+	PrintDebug("All done, worker shuting down.")
 
 	// uncomment to send the Example RPC to the master.
 	// CallExample()

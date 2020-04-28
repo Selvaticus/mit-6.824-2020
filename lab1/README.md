@@ -6,9 +6,9 @@ We will build a MapReduce system. We will implement a worker process that calls 
 
 We will be building something similar to the [MapReduce paper](http://research.google.com/archive/mapreduce-osdi04.pdf).
 
-### Notes
+**Notes:**
 
-This document only has summary of directions given for this lab, for full information about this lab, by the teaching staff, go [here](https://pdos.csail.mit.edu/6.824/labs/lab-mr.html)
+* This document only has summary of directions given for this lab, for full information about this lab, by the teaching staff, go [here](https://pdos.csail.mit.edu/6.824/labs/lab-mr.html)
 
 ## Getting Started
 
@@ -113,3 +113,14 @@ $ sh ./test-mr.sh
 * `main/mrmaster.go` expects `mr/master.go` to implement a `Done()` method that returns true when the MapReduce job is completely finished; at that point, `mrmaster.go` will exit.
 
 * When the job is completely finished, the worker processes should exit. A simple way to implement this is to use the return value from `call()`: if the worker fails to contact the master, it can assume that the master has exited because the job is done, and so the worker can terminate too. Depending on your design, you might also find it helpful to have a "please exit" pseudo-task that the master can give to workers.
+
+## Dev log
+
+### 26/04/2020
+
+Although the implementation solves the Map/Reduce problem, I belive this is not done on an efficient manner, also the code needs to be refactored.
+
+This points me to the conclusion that a cleaner more efficient structure can be found on master to managed all the workloads.
+
+As of today the code passes all tests except the crash test when ran per the test script.
+
