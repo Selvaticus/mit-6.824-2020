@@ -1,3 +1,4 @@
 *.so
 mr-out-0
 lab1/main/mr-tmp/
+.vscode/
