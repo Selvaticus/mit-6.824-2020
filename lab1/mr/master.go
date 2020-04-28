@@ -54,7 +54,7 @@ func (m *Master) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 				reply.Filename = v.filename
 				reply.TaskId = v.taskId
 				reply.AllDone = false
-				reply.IsMap = true
+				reply.TaskType = Map_Task
 				reply.Reducers = m.reducers		
 
 				// Marked as running, aka assigned to worker
@@ -76,7 +76,7 @@ func (m *Master) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 				reply.BucketId = v.taskBucket
 				reply.TaskId = v.taskId
 				reply.AllDone = false
-				reply.IsMap = false
+				reply.TaskType = Reduce_Task
 
 				// Marked as running, aka assigned to worker
 				// and record when it started
@@ -94,6 +94,10 @@ func (m *Master) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 		reply.AllDone = true
 		return nil
 	}
+
+	// Hacky way to let the worker no there is no task at the moment
+	// but the job is not done yet either
+	reply.TaskType = No_Task
 	
 	return nil
 }

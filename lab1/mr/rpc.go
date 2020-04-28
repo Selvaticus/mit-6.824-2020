@@ -24,6 +24,12 @@ type ExampleReply struct {
 
 // Add your RPC definitions here.
 
+const (
+	Map_Task = 1
+	Reduce_Task = 2
+	No_Task = 0
+)
+
 type GetTaskArgs struct {
 }
 
@@ -31,7 +37,7 @@ type GetTaskReply struct {
 	TaskId int
 	Filename string
 	AllDone bool
-	IsMap bool
+	TaskType int
 	Reducers int
 	BucketId int
 }

@@ -12,6 +12,8 @@ import "strconv"
 import "path/filepath"
 import "sort"
 
+import "time"
+
 
 //
 // Map functions return a slice of KeyValue.
@@ -39,6 +41,8 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
+// Worker sleep time in milliseconds
+const WorkerSleep = 1000
 
 //
 // main/mrworker.go calls this function.
@@ -55,7 +59,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	runTask := call("Master.GetTask", &taskArgs, &taskReply)
 
 	for runTask == true && !taskReply.AllDone {
-		if taskReply.IsMap {
+		if taskReply.TaskType == Map_Task {
 			PrintDebug("Gonna run the map function")
 			PrintDebugf("Task: %+v", taskReply)
 			_, err := runMapPhase(mapf, &taskReply)
@@ -72,7 +76,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			}
 			// If the map job ran fine, report a good run back to master
 			call("Master.ReportOnMapJob", &reportArgs, &reportReply)
-		} else {
+		} else if taskReply.TaskType == Reduce_Task {
 			// If it is not a map job, then must be a reduce job
 
 			PrintDebug("Gonna run the reduce function")
@@ -92,6 +96,10 @@ func Worker(mapf func(string, string) []KeyValue,
 			}
 
 			call("Master.ReportOnReduceJob", &reportArgs, &reportReply)
+		} else {
+			// Now we can assume we received a NoTask
+			PrintDebugf("No task received, going to sleep for %v ms", WorkerSleep)
+			time.Sleep(WorkerSleep * time.Millisecond)
 		}
 
 		taskArgs = GetTaskArgs{}
