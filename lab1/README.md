@@ -124,3 +124,10 @@ This points me to the conclusion that a cleaner more efficient structure can be 
 
 As of today the code passes all tests except the crash test when ran per the test script.
 
+### 28/04/2020
+
+As of today the implementations passes all given tests, if they are done separatly, when done in sequence the *reduce parallelism* test is really slow, and the *crash* test fails. I believe this is due to the way I'm handling the intermediate files.
+
+This might also be the reason for the performance issues perceived before.
+
+So further work needs to be done.
