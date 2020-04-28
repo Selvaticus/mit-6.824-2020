@@ -131,3 +131,11 @@ As of today the implementations passes all given tests, if they are done separat
 This might also be the reason for the performance issues perceived before.
 
 So further work needs to be done.
+
+Update to the above:
+
+I some files used for the last to test, *reduce parallelism and crash*, don't have output for all the reducers, hence some left overs of previous runs were getting processed.
+
+I've updated the test script to clear the output of the workers between tests.
+
+Still believe this is mostly due to my handling of the intermediate files, so more work can be done.

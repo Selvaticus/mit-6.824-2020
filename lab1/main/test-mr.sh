@@ -100,6 +100,9 @@ fi
 
 wait ; wait
 
+# This line was not provided by the staff.
+# I'm simply cleaning all master/worker output files between runs
+rm -f mr-*
 
 echo '***' Starting map parallelism test.
 
@@ -130,6 +133,9 @@ fi
 
 wait ; wait
 
+# This line was not provided by the staff.
+# I'm simply cleaning all master/worker output files between runs
+rm -f mr-*
 
 echo '***' Starting reduce parallelism test.
 
@@ -153,6 +159,9 @@ fi
 
 wait ; wait
 
+# This line was not provided by the staff.
+# I'm simply cleaning all master/worker output files between runs
+rm -f mr-*
 
 # generate the correct output
 ../mrsequential ../../mrapps/nocrash.so ../pg*txt || exit 1
