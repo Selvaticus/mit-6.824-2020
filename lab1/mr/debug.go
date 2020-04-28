@@ -9,9 +9,9 @@ func PrintDebug(args interface{}) {
  }
 }
 
-func PrintDebugf(mesg string, args interface{}) {
+func PrintDebugf(mesg string, args ...interface{}) {
 	if shouldPrintMesg() {
-		log.Printf(mesg, args)
+		log.Printf(mesg, args...)
  }
 }
 

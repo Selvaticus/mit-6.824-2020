@@ -63,7 +63,7 @@ func (m *Master) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 				v.started = time.Now()
 				m.mapTasks[i] = v
 
-				PrintDebugf("Sending job: %+v", reply)
+				PrintDebugf("Sending job: %+v", *reply)
 				PrintDebugf("Updated task: %+v", v)
 				return nil
 			}

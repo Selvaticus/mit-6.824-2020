@@ -60,8 +60,7 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	for runTask == true && !taskReply.AllDone {
 		if taskReply.TaskType == Map_Task {
-			PrintDebug("Gonna run the map function")
-			PrintDebugf("Task: %+v", taskReply)
+			PrintDebugf("Running map on task: %+v", taskReply)
 			_, err := runMapPhase(mapf, &taskReply)
 
 			// Report on the map job status
@@ -79,10 +78,8 @@ func Worker(mapf func(string, string) []KeyValue,
 		} else if taskReply.TaskType == Reduce_Task {
 			// If it is not a map job, then must be a reduce job
 
-			PrintDebug("Gonna run the reduce function")
-			PrintDebugf("Task: %+v", taskReply)
+			PrintDebugf("Running reduce on task: %+v", taskReply)
 			_, err := runReducePhase(reducef, &taskReply)
-
 
 			// Report on the reduce job status
 			reportArgs := ReportOnReduceJobArgs{}
@@ -168,7 +165,6 @@ func runMapPhase(mapf func(string, string) []KeyValue, task *GetTaskReply)  ([]s
 		intermediateFilesNames = append(intermediateFilesNames, new_filename)
 	}
 
-
 	return intermediateFilesNames, nil
 }
 
@@ -178,6 +174,7 @@ func runReducePhase(reducef func(string, []string) string, task *GetTaskReply)  
 	matches, err := filepath.Glob("mr-*-"+strconv.Itoa(task.BucketId))
 
 	if err != nil {
+		PrintDebugf("Fail to find intermediate files %v", err)
 		return "", err
 	}
 
@@ -186,9 +183,10 @@ func runReducePhase(reducef func(string, []string) string, task *GetTaskReply)  
 	for _, filename := range(matches)  {
 		file, err := os.Open(filename)
 		if err != nil {
-			log.Fatalf("cannot open %v", filename)
+			PrintDebugf("Cannot open %v", filename)
+			return "", err
 		}
-		// content, err := ioutil.ReadAll(file)
+
 		dec := json.NewDecoder(file)
 		for {
 			var kv KeyValue
@@ -202,10 +200,10 @@ func runReducePhase(reducef func(string, []string) string, task *GetTaskReply)  
 
 	sort.Sort(ByKey(intermediate))
 
-	// oname := "mr-out-"+strconv.Itoa(task.BucketId)
-	// ofile, _ := os.Create(oname)
-
 	ofile, err := ioutil.TempFile("", "mr-out")
+	oname := ofile.Name()
+
+	PrintDebugf("Using temp file %v", oname)
 
 	// call Reduce on each distinct key in intermediate[], and print the result
 	i := 0
@@ -226,15 +224,14 @@ func runReducePhase(reducef func(string, []string) string, task *GetTaskReply)  
 		i = j
 	}
 
-	oname := ofile.Name()
-
 	ofile.Close()
 
 	new_name := "mr-out-"+strconv.Itoa(task.BucketId)
 
 	err = os.Rename(oname, new_name)
 	if err != nil {
-		log.Fatalf("Failed to rename file %v to %v", oname, new_name)
+		PrintDebugf("Failed to rename file %v to %v", oname, new_name)
+		return "", err
 	}
 
 	return new_name, nil
