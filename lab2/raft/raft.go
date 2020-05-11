@@ -204,21 +204,25 @@ type AppendEntriesReply struct {
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	if args.Term < rf.currentTerm {
 		// Term is out of date. Respond with current term
-		reply.Term = rf.currentTerm
 		reply.Success = false
 	} else {
-		rf.mu.Lock()
-		
-		// Make sure the instance has the latest term and is a FOLLOWER
+		// Make sure the instance has the latest term and reset the FOLLOWER status
 		rf.currentTerm = args.Term
 		rf.state = FOLLOWER
+		rf.votedFor = -1
+
+		// Record the time of this call
+		rf.lastComm = time.Now()
 		
 		reply.Success = true
-		reply.Term = rf.currentTerm
-		rf.mu.Unlock()
 	}
+
+	reply.Term = rf.currentTerm
 }
 
 //
@@ -352,6 +356,9 @@ func (rf *Raft) heartbeat() {
 	// Our test bed doesn't kill processes or goroutines, just marks them as killed
 	// as such if we detect the raft server as been killed we should stop all work
 	for !rf.killed() {
+		
+		time.Sleep(HEARTBEAT)
+
 		if _, isleader := rf.GetState(); isleader {
 			// This instance is the leader and should send heartbeats
 			var args = &AppendEntriesArgs{}
@@ -363,6 +370,9 @@ func (rf *Raft) heartbeat() {
 					// If not the current server instance
 					reply := &AppendEntriesReply{}
 					rf.sendAppendEntries(i, args, reply)
+					// go func() {
+
+					// }
 				}
 			}
 		}

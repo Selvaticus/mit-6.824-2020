@@ -101,6 +101,8 @@ Initial code provided by the staff was pulled. (Check this commit for the code t
 
 ### 11/05/2020
 
+*Working on part 2A.*
+
 First test for 2A pass, but not the second. So the first leader is elected, but no new leader gets elected after failure in the cluster.
 
 Will need to debug the above, and the code will need some proper refactor its quite ugly as of now.
