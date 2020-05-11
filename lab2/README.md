@@ -98,3 +98,9 @@ For all of labs 2, 3, and 4, we should assume that if it takes more than 600 sec
 ### 04/05/2020
 
 Initial code provided by the staff was pulled. (Check this commit for the code that was provided versus the one I wrote)
+
+### 11/05/2020
+
+First test for 2A pass, but not the second. So the first leader is elected, but no new leader gets elected after failure in the cluster.
+
+Will need to debug the above, and the code will need some proper refactor its quite ugly as of now.

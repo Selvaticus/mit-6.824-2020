@@ -24,6 +24,25 @@ import "../labrpc"
 // import "bytes"
 // import "../labgob"
 
+import "math/rand"
+import "time"
+
+
+// Raft server states
+const (
+	LEADER = 0
+	FOLLOWER = 1
+	CANDIDATE = 2
+)
+
+const HEARTBEAT = 10 * time.Millisecond
+
+type ServerState int
+
+type LogEntry struct {
+	term int
+	command interface{}
+}
 
 
 //
@@ -57,6 +76,16 @@ type Raft struct {
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 
+	// State for leader election (2A)
+	currentTerm int
+	votedFor int
+	state ServerState
+
+	log []LogEntry
+
+	// Last comms from leader
+	lastComm time.Time
+
 }
 
 // return currentTerm and whether this server
@@ -66,6 +95,9 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (2A).
+	term = rf.currentTerm
+	isleader = rf.state == LEADER
+
 	return term, isleader
 }
 
@@ -117,6 +149,8 @@ func (rf *Raft) readPersist(data []byte) {
 //
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
+	Term int
+	CandidateId int
 }
 
 //
@@ -125,6 +159,8 @@ type RequestVoteArgs struct {
 //
 type RequestVoteReply struct {
 	// Your data here (2A).
+	Term int
+	VoteGranted bool
 }
 
 //
@@ -132,6 +168,57 @@ type RequestVoteReply struct {
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
+	if args.Term < rf.currentTerm {
+		// Candidate term is out of date. Don't vote and send current term so it can update itself
+		reply.Term = rf.currentTerm
+		reply.VoteGranted = false
+	} else {
+		rf.mu.Lock()
+		defer rf.mu.Unlock()
+
+		// Update current term as it will be at least the same as the candidate
+		rf.currentTerm = args.Term
+		
+		reply.Term = rf.currentTerm
+
+		if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
+			// If this server hasnt voted yet or already voted for that candidate, give vote to the candidate
+			reply.VoteGranted = true
+
+			// Update which candidate we voted for
+			rf.votedFor = args.CandidateId
+		} else {
+			reply.VoteGranted = false
+		}
+	}
+}
+
+type AppendEntriesArgs struct {
+	Term int
+	LeaderId int
+}
+
+type AppendEntriesReply struct {
+	Term int
+	Success bool
+}
+
+func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	if args.Term < rf.currentTerm {
+		// Term is out of date. Respond with current term
+		reply.Term = rf.currentTerm
+		reply.Success = false
+	} else {
+		rf.mu.Lock()
+		
+		// Make sure the instance has the latest term and is a FOLLOWER
+		rf.currentTerm = args.Term
+		rf.state = FOLLOWER
+		
+		reply.Success = true
+		reply.Term = rf.currentTerm
+		rf.mu.Unlock()
+	}
 }
 
 //
@@ -165,6 +252,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 //
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+	return ok
+}
+
+
+func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	return ok
 }
 
@@ -234,10 +327,96 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (2A, 2B, 2C).
+	rf.currentTerm = 0
+	rf.votedFor = -1 // Using -1 as no vote casted.
+	rf.state = FOLLOWER
+
+	rf.log = make([]LogEntry, 1)
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
+	// Start long-runnong goroutines
+	go rf.heartbeat()
+	go rf.election()
 
 	return rf
+}
+
+
+// Time driven activities
+
+// This routine sends heartbeats to followers if this server instance is the leader
+func (rf *Raft) heartbeat() {
+	// Keep working whilst the raft server is not dead
+	// Our test bed doesn't kill processes or goroutines, just marks them as killed
+	// as such if we detect the raft server as been killed we should stop all work
+	for !rf.killed() {
+		if _, isleader := rf.GetState(); isleader {
+			// This instance is the leader and should send heartbeats
+			var args = &AppendEntriesArgs{}
+			args.Term = rf.currentTerm
+			args.LeaderId = rf.me
+
+			for i := 0; i < len(rf.peers); i++ {
+				if i != rf.me {
+					// If not the current server instance
+					reply := &AppendEntriesReply{}
+					rf.sendAppendEntries(i, args, reply)
+				}
+			}
+		}
+	}
+}
+
+// This routine checks if it should start a new election process
+func (rf *Raft) election() {
+	// Keep working whilst the raft server is not dead
+	// Our test bed doesn't kill processes or goroutines, just marks them as killed
+	// as such if we detect the raft server as been killed we should stop all work
+
+	for !rf.killed() {
+		// Get a randon election timout between 250 - 500 ms
+		var electionTimeout = (rand.Float32() * 250) + 250
+
+		time.Sleep(time.Duration(electionTimeout) * time.Millisecond)
+
+		rf.mu.Lock()
+		if rf.state == FOLLOWER {
+			// We are a follower, check if we received comms from the leader
+
+			if time.Since(rf.lastComm) > 2 * HEARTBEAT {
+				// If we didnt received any comms or the last comm was longer than 2 heartbeats ago we need to start an election
+
+				rf.currentTerm += 1
+				rf.state = CANDIDATE
+
+				// Vote for ourselves
+				rf.votedFor = rf.me
+
+				// SEND VOTE REQUESTS
+				var args = &RequestVoteArgs{rf.currentTerm, rf.me}
+
+				var votes = 0
+
+				for i := 0; i < len(rf.peers); i++ {
+					if i != rf.me {
+						// If not the current server instance
+						reply := &RequestVoteReply{}
+						if rf.sendRequestVote(i, args, reply) && reply.VoteGranted{
+							votes++
+						}
+
+						if votes > len(rf.peers)/2 {
+							// this server instance won the majority
+
+							rf.state = LEADER
+							break;
+						}
+					}
+				}
+			}
+		}
+		rf.mu.Unlock()
+	}
 }
