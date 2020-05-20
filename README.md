@@ -6,11 +6,16 @@ More info about the class can be found on the [class page](https://pdos.csail.mi
 
 ## Notes
 
-* As opossed to previous years this edition of the class is presented in Go, so that is the language I'm using. More can be found [here](https://golang.org)
+* This edition of the class is presented in Go, so I'm also having to learn it. More about Go [here](https://golang.org)
 
-* First lecture was just an introduction, so pratical examples do not exist
+* Most work is in the labs.
 
 ## Lectures
 
 * [Lecture 2](./lec2/README.md)
 
+## labs
+
+* [Lab1](./lab1/README.md) MapReduce
+
+* [Lab2](./lab2/README.md) Raft protocol
