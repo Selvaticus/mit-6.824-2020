@@ -116,3 +116,17 @@ Code is still ugly, but I'm focusing on getting the reelection working.
 * Fixed the RequestVote RFC to handle out of date state properly. Now we should be resetting to follower whenever the current raft is out of date.
 
 * Changed the way we check for reelection timeouts. Use the reelection timeout and lastComms time to trigger reelection. (insted of previous 2 * heartbeat)
+
+Finally found a nasty deadlock bug with mutex locks and channels. I've fixed the bug and now all tests for part 2A pass. Code is still pretty ugly and needs some care
+
+Things to improve:
+
+* Handle the timers better
+
+* Implement reset of election timer (This can possibly cause liveliness issues)
+
+* Implement better print debug function (More information provided)
+
+* Handle the "kill signal" better
+
+* Clean up the fix for the deadlock bug between mutex locks and channels

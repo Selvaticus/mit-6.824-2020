@@ -97,6 +97,8 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (2A).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	term = rf.currentTerm
 	isleader = rf.state == LEADER
 
@@ -182,7 +184,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	} else if args.Term > rf.currentTerm {
 		// Current raft is out of date, so we convert to follower before handling the RPC
 		rf.currentTerm = args.Term
-		rf.votedFor = args.CandidateId
+		rf.votedFor = -1
 		rf.state = FOLLOWER
 	}
 	
@@ -217,7 +219,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	utils.PrintDebugf("(Raft %v) Received AppendEntries Request. Args: %+v", rf.me, args)
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
+	
 	if args.Term < rf.currentTerm {
 		utils.PrintDebugf("(Raft %v)\t Leader is out of date", rf.me)
 		// Term is out of date. Respond with current term
@@ -228,14 +230,14 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.currentTerm = args.Term
 		rf.state = FOLLOWER
 		// rf.votedFor = -1
-
+		
 		// Record the time of this call
 		rf.lastComm = time.Now()
 		
 		reply.Success = true
 		utils.PrintDebugf("(Raft %v)\t Current term: %v; Last comms: %v", rf.me, rf.currentTerm, rf.lastComm)
 	}
-
+		
 	reply.Term = rf.currentTerm
 	utils.PrintDebugf("(Raft %v) Replying: %+v", rf.me, reply)
 	return
@@ -378,49 +380,42 @@ func (rf *Raft) heartbeat() {
 
 		time.Sleep(HEARTBEAT)
 
+		rf.mu.Lock()
 		if rf.state == LEADER {
 			// This instance is the leader and should send heartbeats
 			var args = &AppendEntriesArgs{}
 			args.Term = rf.currentTerm
 			args.LeaderId = rf.me
+			rf.mu.Unlock()
 
 			for i := 0; i < len(rf.peers); i++ {
 				if i != rf.me {
 					// If not the current server instance
-					// reply := &AppendEntriesReply{}
-					// rf.sendAppendEntries(i, args, reply)
 
 					// Use goroutines to send heartbeats whitout locking
 					go func(peerId int) {
-						rf.mu.Lock()
-						utils.PrintDebugf("(Raft %v -=Heartbeat=-)\t Testing we still the leader and on current term. state: %v; currentTerm: %v; request term: %v", rf.me, rf.state, rf.currentTerm, args.Term)
-						if rf.state == LEADER && rf.currentTerm == args.Term {
-							// We are still on the leader on the right term
-							utils.PrintDebugf("(Raft %v -=Heartbeat=-)\t Still the leader", rf.me)
+						reply := &AppendEntriesReply{}
+						rf.sendAppendEntries(peerId, args, reply)
+						
+						rf.mu.Lock() // Lock to update state according to reply
+						if reply.Term > rf.currentTerm {
+							utils.PrintDebugf("(Raft %v -=Heartbeat=-)\t Follower has more recent term: %+v", rf.me, reply)
 
-							rf.mu.Unlock() // Unlock for the RPC call
+							// This instance is out of date
+							// Make sure the instance has the latest term and reset to the FOLLOWER state
+							rf.currentTerm = reply.Term
+							rf.state = FOLLOWER
+							rf.votedFor = -1
 
-							reply := &AppendEntriesReply{}
-							rf.sendAppendEntries(peerId, args, reply)
-							
-							rf.mu.Lock() // Lock to update state according to reply
-							if reply.Term > rf.currentTerm {
-								utils.PrintDebugf("(Raft %v -=Heartbeat=-)\t Follower has more recent term: %+v", rf.me, reply)
-
-								// This instance is out of date
-								// Make sure the instance has the latest term and reset to the FOLLOWER state
-								rf.currentTerm = reply.Term
-								rf.state = FOLLOWER
-								rf.votedFor = -1
-
-								utils.PrintDebugf("(Raft %v -=Heartbeat=-)\t Updated current term: %v and state: %v", rf.me, rf.currentTerm, rf.state)
-							}
+							utils.PrintDebugf("(Raft %v -=Heartbeat=-)\t Updated current term: %v and state: %v", rf.me, rf.currentTerm, rf.state)
 						}
 						rf.mu.Unlock()
 					}(i)
-
 				}
 			}
+		} else {
+			// We just need to unlock
+			rf.mu.Unlock()
 		}
 	}
 
@@ -447,107 +442,84 @@ func (rf *Raft) election() {
 		if rf.state == FOLLOWER {
 			// We are a follower, check if we received comms from the leader
 
-			if sinceLastComm := time.Since(rf.lastComm); sinceLastComm > 2 * HEARTBEAT {
-				utils.PrintDebugf("(Raft %v -=Election=-) It has been %v since last leader comms. Starting new election...", rf.me, sinceLastComm)
+			if sinceLastComm := time.Since(rf.lastComm); sinceLastComm > electionTimeoutDuration {
+				utils.PrintDebugf("(Raft %v -=Election=-) It has been %v since last leader comms", rf.me, sinceLastComm)
 
-				// If we didnt received any comms or the last comm was longer than 2 heartbeats ago we need to start an election
-
-				rf.currentTerm += 1
-				rf.state = CANDIDATE
-
-				// Vote for ourselves
-				rf.votedFor = rf.me
-
-				// SEND VOTE REQUESTS
-				var args = &RequestVoteArgs{rf.currentTerm, rf.me}
-
-				// var votes = 1
-
-				// This function will send the vote requests and check if the raft instance won
-				go func() {
-					// // SEND VOTE REQUESTS
-					// var args = &RequestVoteArgs{rf.currentTerm, rf.me}
-
-					var voteCh = make(chan int)
-					var electionTimeout = time.NewTimer(electionTimeoutDuration)
-
-					var votes = 1
-
-					// Send vote requests to all peers
-					for i := 0; i < len(rf.peers); i++ {
-						if i != rf.me {
-							// If not the current server instance
-							
-							go func(channel chan int, peerId int) {
-								utils.PrintDebugf("(Raft %v -=Election=-)\t Sending request vote to peer %v", rf.me, peerId)
-								reply := &RequestVoteReply{}
-								if rf.sendRequestVote(peerId, args, reply) && reply.VoteGranted{
-									channel<-1
-								} else {
-									channel<-0
-								}
-								
-								utils.PrintDebugf("(Raft %v -=Election=-)\t Peer %v responded with: %+v", rf.me, peerId, reply)
-							}(voteCh, i)
-						}
-					}
-
-					run := true
-
-					// Run whilst we don't have a majority and the election timeout hasn't runout
-					for run {
-						// Either wait for votes or the election timeout
-						select {
-							case vote := <-voteCh:
-								votes += vote
-								if votes > len(rf.peers)/2 {
-									// this server instance won the majority
-			
-									utils.PrintDebugf("(Raft %v -=Election=-) Majority achieved", rf.me)
-			
-									rf.mu.Lock()
-									rf.state = LEADER
-									rf.votedFor = -1
-									rf.mu.Unlock()
-
-									run = false
-								}
-
-							case <-electionTimeout.C:
-								utils.PrintDebugf("(Raft %v -=Election=-) Election timeout.", rf.me)
-								run = false
-						}
-					}
-
-				}()
-
-				// for i := 0; i < len(rf.peers); i++ {
-				// 	if i != rf.me {
-				// 		utils.PrintDebugf("(Raft %v -=Election=-) Sending request vote to peer %v", rf.me, i)
-				// 		// If not the current server instance
-				// 		reply := &RequestVoteReply{}
-				// 		if rf.sendRequestVote(i, args, reply) && reply.VoteGranted{
-				// 			votes++
-				// 		}
-
-				// 		utils.PrintDebugf("(Raft %v -=Election=-) Peer %v responded with: %+v", rf.me, i, reply)
-
-				// 		if votes > len(rf.peers)/2 {
-				// 			// this server instance won the majority
-
-				// 			utils.PrintDebugf("(Raft %v -=Election=-) Majority achieved", rf.me)
-
-				// 			rf.state = LEADER
-				// 			rf.votedFor = -1
-
-				// 			break;
-				// 		}
-				// 	}
-				// }
+				go rf.newElection()
 			}
+		} else if rf.state == CANDIDATE {
+			// If we are a candidate and the election timeout start a new one
+			utils.PrintDebugf("(Raft %v -=Election=-) Election timeout as a CANDIDATE", rf.me)
+			go rf.newElection()
 		}
 		rf.mu.Unlock()
 	}
 
 	utils.PrintDebugf("(Raft %v -=Election=-) Stopping election routine", rf.me)
+}
+
+func (rf *Raft) newElection() {
+	utils.PrintDebugf("(Raft %v -=Election=-) Starting new election...", rf.me)
+
+	rf.mu.Lock()
+	
+	rf.currentTerm += 1
+	rf.state = CANDIDATE
+	
+	// Vote for ourselves
+	rf.votedFor = rf.me
+	
+	// Prepare args for request vote
+	var args = &RequestVoteArgs{rf.currentTerm, rf.me}
+	
+	rf.mu.Unlock()
+
+	var voteCh = make(chan int)
+
+	var votes = 1
+
+	// Send vote requests to all peers
+	for i := 0; i < len(rf.peers); i++ {
+		if i != rf.me {
+			// If not the current server instance
+			
+			go func(channel chan int, peerId int) {
+				utils.PrintDebugf("(Raft %v -=Election=-)\t Sending request vote to peer %v", rf.me, peerId)
+				reply := &RequestVoteReply{}
+				result := rf.sendRequestVote(peerId, args, reply)
+				
+				rf.mu.Lock()
+				// Need to calculate this before trying to talk with the channels
+				gotTheVote := result && reply.VoteGranted && reply.Term == rf.currentTerm
+				rf.mu.Unlock()
+				
+				// Check the RPC call returned, and the vote was granted and that we are still in the right term
+				if gotTheVote {
+					channel<-1
+				} else {
+					channel<-0
+				}
+				utils.PrintDebugf("(Raft %v -=Election=-)\t Peer %v responded with: %+v", rf.me, peerId, reply)
+				
+			}(voteCh, i)
+		}
+	}
+
+	// Wait for peers to respond
+	for i := 0; i < len(rf.peers); i++ {
+		vote := <- voteCh
+		votes = votes + vote
+
+		// check if we already achieved machority
+		if votes > len(rf.peers) / 2 {
+			rf.mu.Lock()
+			utils.PrintDebugf("(Raft %v -=Election=-)\t Majority achieved", rf.me)
+
+			rf.state = LEADER
+
+			rf.mu.Unlock()
+			break
+		}
+	}
+
 }
