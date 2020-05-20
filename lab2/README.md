@@ -106,3 +106,13 @@ Initial code provided by the staff was pulled. (Check this commit for the code t
 First test for 2A pass, but not the second. So the first leader is elected, but no new leader gets elected after failure in the cluster.
 
 Will need to debug the above, and the code will need some proper refactor its quite ugly as of now.
+
+### 20/05/2020
+
+*Still working on part 2A.*
+
+Code is still ugly, but I'm focusing on getting the reelection working.
+
+* Fixed the RequestVote RFC to handle out of date state properly. Now we should be resetting to follower whenever the current raft is out of date.
+
+* Changed the way we check for reelection timeouts. Use the reelection timeout and lastComms time to trigger reelection. (insted of previous 2 * heartbeat)

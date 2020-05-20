@@ -170,28 +170,34 @@ type RequestVoteReply struct {
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	if args.Term < rf.currentTerm {
 		// Candidate term is out of date. Don't vote and send current term so it can update itself
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
-	} else {
-		rf.mu.Lock()
-		defer rf.mu.Unlock()
 
-		// Update current term as it will be at least the same as the candidate
+		return
+	} else if args.Term > rf.currentTerm {
+		// Current raft is out of date, so we convert to follower before handling the RPC
 		rf.currentTerm = args.Term
-		
-		reply.Term = rf.currentTerm
+		rf.votedFor = args.CandidateId
+		rf.state = FOLLOWER
+	}
+	
+	// Now we can handle the request
+	
+	reply.Term = rf.currentTerm
 
-		if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
-			// If this server hasnt voted yet or already voted for that candidate, give vote to the candidate
-			reply.VoteGranted = true
+	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
+		// If this server hasnt voted yet or already voted for that candidate, give vote to the candidate
+		reply.VoteGranted = true
 
-			// Update which candidate we voted for
-			rf.votedFor = args.CandidateId
-		} else {
-			reply.VoteGranted = false
-		}
+		// Update which candidate we voted for
+		rf.votedFor = args.CandidateId
+	} else {
+		reply.VoteGranted = false
 	}
 
 	return
@@ -221,7 +227,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		// Make sure the instance has the latest term and reset the FOLLOWER status
 		rf.currentTerm = args.Term
 		rf.state = FOLLOWER
-		rf.votedFor = -1
+		// rf.votedFor = -1
 
 		// Record the time of this call
 		rf.lastComm = time.Now()
@@ -387,16 +393,17 @@ func (rf *Raft) heartbeat() {
 					// Use goroutines to send heartbeats whitout locking
 					go func(peerId int) {
 						rf.mu.Lock()
-						if rf.state == LEADER && rf.currentTerm == args.Term{
+						utils.PrintDebugf("(Raft %v -=Heartbeat=-)\t Testing we still the leader and on current term. state: %v; currentTerm: %v; request term: %v", rf.me, rf.state, rf.currentTerm, args.Term)
+						if rf.state == LEADER && rf.currentTerm == args.Term {
+							// We are still on the leader on the right term
 							utils.PrintDebugf("(Raft %v -=Heartbeat=-)\t Still the leader", rf.me)
 
-							// We are still on the leader on the right term
-							rf.mu.Unlock()
+							rf.mu.Unlock() // Unlock for the RPC call
 
 							reply := &AppendEntriesReply{}
 							rf.sendAppendEntries(peerId, args, reply)
 							
-							rf.mu.Lock()
+							rf.mu.Lock() // Lock to update state according to reply
 							if reply.Term > rf.currentTerm {
 								utils.PrintDebugf("(Raft %v -=Heartbeat=-)\t Follower has more recent term: %+v", rf.me, reply)
 
